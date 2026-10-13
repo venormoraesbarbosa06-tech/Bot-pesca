@@ -2,46 +2,41 @@
 import os
 import asyncio
 import discord
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = discord.Client(intents=intents)
-ai = OpenAI(api_key=OPENAI_API_KEY)
+ai = genai.Client(api_key=GEMINI_API_KEY)
 
 
 def analisar_imagem(image_url):
-    response = ai.responses.create(
-        model="gpt-4.1-mini",
-        input=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": (
-                            "Descreva em português o que aparece "
-                            "nesta imagem. Identifique objetos, "
-                            "itens do jogo e textos legíveis. "
-                            "Não invente informações; se não "
-                            "tiver certeza, diga isso."
-                        ),
-                    },
-                    {
-                        "type": "input_image",
-                        "image_url": image_url,
-                        "detail": "high",
-                    },
-                ],
-            }
+    import urllib.request
+
+    with urllib.request.urlopen(image_url, timeout=30) as resposta:
+        imagem_bytes = resposta.read()
+
+    response = ai.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[
+            types.Part.from_bytes(
+                data=imagem_bytes,
+                mime_type="image/jpeg",
+            ),
+            (
+                "Descreva em português o que aparece nesta imagem "
+                "de jogo. Identifique objetos, itens e textos legíveis. "
+                "Não invente informações; se não tiver certeza, diga isso."
+            ),
         ],
     )
-    return response.output_text.strip()
+    return response.text or "Não consegui identificar a imagem."
 
 
 @bot.event
@@ -51,7 +46,7 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    if message.author == bot.user:
+    if bot.user and message.author.id == bot.user.id:
         return
 
     if message.channel.id != CHANNEL_ID:
